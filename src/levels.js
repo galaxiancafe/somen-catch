@@ -16,12 +16,20 @@ const KIND = { N: 'noodle', T: 'tomato', L: 'leaf' };
 // Tomatoes roll a little slower than the speed written for them.
 export const TOMATO_SPEED_FACTOR = 0.85;
 
+// Each shop's finale was too hard in playtesting (Ariana, 2026-10-24): its
+// speeds are eased by 10%.
+export const FINALE_EASE = 0.9;
+
 // Beat: [crossMs, 'N' | 'T' | 'L', speed, surge?, tube?] where surge = { at, speed }.
-// `tubes` (multi-tube levels) supplies each tube's catch line.
-function script(windows, beats, tubes = null) {
+// `tubes` (multi-tube levels) supplies each tube's catch line. `ease` scales
+// every speed in the script (surges too) while keeping each crossing on its
+// beat, so a level can be made gentler without changing its rhythm.
+function script(windows, beats, tubes = null, ease = 1) {
   const w = { ...DEFAULT_WINDOWS, ...windows };
-  return beats.map(([cross, k, written, surge, tube]) => {
+  return beats.map(([cross, k, base, sg, tube]) => {
     const kind = KIND[k];
+    const written = base * ease;
+    const surge = sg ? { at: sg.at, speed: sg.speed * ease } : undefined;
     const speed = kind === 'tomato' ? written * TOMATO_SPEED_FACTOR : written;
     const vCatch = surge ? surge.speed : speed;
     const path = tubes ? tubes[tube || 0].path : null;
@@ -181,7 +189,7 @@ export const KYOTO_LEVELS = [
       [13600, 'L', 0.9],
       [13920, 'N', 0.9],
       [14640, 'N', 1.1],
-    ]),
+    ], null, FINALE_EASE),
     starThresholds: [75, 120, 164],
   },
 ];
@@ -309,7 +317,7 @@ export const HALL_LEVELS = [
       [720, 'N', 0.9, 3],
       [720, 'N', 1.1, 0],
       [720, 'N', 0.95, 2],
-    ]), HALL_T),
+    ]), HALL_T, FINALE_EASE),
     starThresholds: [85, 135, 181],
   },
 ];
@@ -446,7 +454,7 @@ export const POOL_LEVELS = [
       [720, 'N', 0.44, 3],
       [720, 'N', 0.52, 0],
       [720, 'N', 0.46, 2],
-    ]), GRAND_T),
+    ]), GRAND_T, FINALE_EASE),
     starThresholds: [85, 135, 181],
   },
 ];

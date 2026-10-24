@@ -224,7 +224,7 @@ test('difficulty ramps from level 2 to 5, and MATSURI is near impossible', () =>
   }
   const m = LEVELS[4];
   assert.ok(perfectMs(m) <= 40);
-  assert.ok(topSpeed(m) >= 1.0);
+  assert.ok(topSpeed(m) >= 0.95); // eased 10% after playtesting
   assert.ok(share(m) >= 0.95);
   const c = crossings(m).filter((x) => catchable(x.e)).map((x) => x.cross).sort((a, b) => a - b);
   assert.ok(c.some((t, i) => i && Math.abs(t - c[i - 1] - 720) < 1), 'a 720 ms pair');
