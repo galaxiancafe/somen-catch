@@ -14,12 +14,13 @@ export function gradeOffset(offMs, w) {
   return 'MISS';
 }
 
-// Judges the tap against every bundle on the flume; the one closest to its
-// catch moment wins.
-export function judge(flow, tTap) {
+// Judges the tap against every bundle on the chosen tube (every tube when
+// `tube` is null); the one closest to its catch moment wins.
+export function judge(flow, tTap, tube = null) {
   let best = null;
   for (const b of flow.bundles) {
     if (b.state !== 'flow') continue;
+    if (tube !== null && b.tube !== tube) continue;
     const offsetMs = (tTap - crossTime(flow, b)) * 1000;
     const grade = gradeOffset(offsetMs, b.windows);
     if (grade === 'MISS') continue;
@@ -29,7 +30,7 @@ export function judge(flow, tTap) {
 }
 
 export function createHand() {
-  return { phases: null, i: 0, t: 0, grade: null, grams: 0, kind: null, flick: false };
+  return { phases: null, i: 0, t: 0, grade: null, grams: 0, kind: null, flick: false, tube: 0, fromTube: 0 };
 }
 
 export function handIdle(hand) {
@@ -79,10 +80,21 @@ export function handPhase(hand) {
   return { name, p: Math.min(1, hand.t / d) };
 }
 
-// Returns null when the hand is busy (the cooldown); otherwise the judgement.
-export function tryCatch(flow, hand, tTap) {
+// Which tube a tap at buffer x aims at: the one whose catch point is nearest
+// in x (ties go left). `catchXs` is each tube's catch-point x, left to right.
+export function pickTube(catchXs, x) {
+  let best = 0;
+  for (let i = 1; i < catchXs.length; i++) if (Math.abs(catchXs[i] - x) < Math.abs(catchXs[best] - x)) best = i;
+  return best;
+}
+
+// Returns null when the hand is busy (the cooldown, shared by all tubes);
+// otherwise the judgement. On multi-tube levels `tube` is the tube aimed at.
+export function tryCatch(flow, hand, tTap, tube = null) {
   if (!handIdle(hand)) return null;
-  const r = judge(flow, tTap);
+  const r = judge(flow, tTap, tube);
+  hand.fromTube = hand.tube;
+  hand.tube = tube ?? 0;
   if (r.bundle) {
     r.bundle.state = 'caught';
     flow.freeAt = Math.max(flow.freeAt, tTap);

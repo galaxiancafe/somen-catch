@@ -249,6 +249,22 @@ test('tapping 300 ms early in MATSURI catches the leaf in front of a noodle', ()
   assert.equal(r.bundle && r.bundle.kind, 'leaf');
 });
 
+test('tomatoes roll slower than the speed written for them', async () => {
+  const { TOMATO_SPEED_FACTOR } = await import('../src/levels.js');
+  assert.ok(TOMATO_SPEED_FACTOR < 1);
+  const tomatoes = LEVELS.flatMap((l) => l.entries || []).filter((e) => e.kind === 'tomato');
+  assert.ok(tomatoes.length > 0);
+  for (const e of tomatoes) assert.ok(Math.abs(e.speed - e.writtenSpeed * TOMATO_SPEED_FACTOR) < 1e-12);
+  // Crossing times stay where the script put them, so the fairness gaps hold.
+  for (const lv of scripted) {
+    const flow = createFlow(lv);
+    for (const e of lv.entries.filter((x) => x.kind === 'tomato')) {
+      const b = { spawnT: 0, v0: e.speed, surge: null, tSurge: Infinity, bodyFromHead: (e.speed * windowsFor('tomato', flow.windows).head) / 1000 };
+      assert.ok(Math.abs(e.at + crossTime(flow, b) * 1000 - e.cross) < 1e-6, `${lv.id} tomato at ${e.cross}`);
+    }
+  }
+});
+
 // ---- save data ----
 
 test('a v1 save with 4 levels unlocked keeps FIRST TASTE best and clamps to the level list', () => {
@@ -260,12 +276,12 @@ test('a v1 save with 4 levels unlocked keeps FIRST TASTE best and clamps to the 
   const desc = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => saved, setItem() {} } });
   try {
-    const p = loadProgress(LEVELS.length);
-    assert.equal(p.unlocked, 4);
+    const p = loadProgress();
+    assert.deepEqual(p.unlocked, { kyoto: 4, hall: 1, pool: 1 });
     assert.deepEqual(p.best['first-taste'], { score: 975, stars: 3 });
     const shown = LEVELS.filter((l) => p.best[l.id]).map((l) => l.id);
     assert.deepEqual(shown, ['first-taste']);
-    assert.equal(loadProgress(3).unlocked, 3);
+    assert.equal(loadProgress({ kyoto: 3, hall: 5, pool: 5 }).unlocked.kyoto, 3);
   } finally {
     if (desc) Object.defineProperty(globalThis, 'localStorage', desc);
     else delete globalThis.localStorage;

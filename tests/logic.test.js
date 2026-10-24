@@ -193,18 +193,19 @@ test('score: counts add up to bundle total; zero catches gives zero stars', () =
 
 // ---- progression / storage ----
 
-test('progress: one star unlocks the next level; best keeps the higher score', () => {
+test('progress: one star unlocks the next level in the same shop; best keeps the higher score', () => {
   const p = defaultProgress();
-  applyResult(p, 0, 'a', 300, 0, 4);
-  assert.equal(p.unlocked, 1);
-  const r1 = applyResult(p, 0, 'a', 500, 1, 4);
-  assert.equal(p.unlocked, 2);
+  applyResult(p, 'kyoto', 0, 'a', 300, 0, 5);
+  assert.equal(p.unlocked.kyoto, 1);
+  const r1 = applyResult(p, 'kyoto', 0, 'a', 500, 1, 5);
+  assert.equal(p.unlocked.kyoto, 2);
+  assert.equal(p.unlocked.hall, 1);
   assert.ok(r1.newBest);
-  const r2 = applyResult(p, 0, 'a', 400, 3, 4);
+  const r2 = applyResult(p, 'kyoto', 0, 'a', 400, 3, 5);
   assert.equal(r2.newBest, false);
   assert.deepEqual(p.best.a, { score: 500, stars: 3 });
-  applyResult(p, 3, 'd', 900, 3, 4);
-  assert.equal(p.unlocked, 4);
+  applyResult(p, 'kyoto', 4, 'd', 900, 3, 5);
+  assert.equal(p.unlocked.kyoto, 5);
 });
 
 test('storage: blocked localStorage falls back to defaults without throwing', () => {

@@ -5,8 +5,12 @@
 // Two level formats:
 // - count + spacing ({ bundles, speed, spacingMs }): the v1 rule, one bundle in
 //   flight, the next waits for the spacing and for the previous one to leave.
-// - scripted ({ entries: [{ at, speed?, kind?, surge? }] }): each entry starts
-//   at its own time, several can be in flight.
+// - scripted ({ entries: [{ at, speed?, kind?, surge?, tube? }] }): each entry
+//   starts at its own time, several can be in flight.
+//
+// A level may have several tubes (`tubes: [{ path, covers? }]`). Each bundle
+// belongs to one tube and uses that tube's catch line (s 0.85 on straight
+// tubes, on the run-out for curved ones).
 
 export const BUNDLE_GRAMS = 10;
 export const TOMATO_GRAMS = 5;
@@ -26,6 +30,10 @@ export function createFlow(level, { sCatch = S_CATCH } = {}) {
   const entries = scripted ? [...level.entries].sort((a, b) => a.at - b.at) : null;
   const leadIn = (level.leadInMs ?? (scripted ? SCRIPT_LEAD_IN_MS : LEAD_IN_MS)) / 1000;
   const kindCount = (k) => (scripted ? entries.filter((e) => (e.kind || 'noodle') === k).length : k === 'noodle' ? level.bundles : 0);
+  const tubes = (level.tubes || [{}]).map((t, i) => ({
+    sCatch: t.path && t.path.sCatch !== undefined ? t.path.sCatch : sCatch,
+    covers: t.covers || (i === 0 ? level.covers || [] : []),
+  }));
   const noodleTotal = kindCount('noodle');
   const tomatoTotal = kindCount('tomato');
   return {
@@ -33,6 +41,7 @@ export function createFlow(level, { sCatch = S_CATCH } = {}) {
     speed: level.speed,
     windows,
     sCatch,
+    tubes,
     scripted,
     entries,
     leadIn,
@@ -54,6 +63,7 @@ export function createFlow(level, { sCatch = S_CATCH } = {}) {
 
 function makeBundle(flow, id, spawnT, e = {}) {
   const kind = e.kind || 'noodle';
+  const tube = e.tube || 0;
   const v0 = e.speed ?? flow.speed;
   const surge = e.surge || null;
   // Geometry uses the speed at the catch line, so ms windows mean the same on every bundle.
@@ -62,6 +72,8 @@ function makeBundle(flow, id, spawnT, e = {}) {
   return {
     id,
     kind,
+    tube,
+    sCatch: flow.tubes[tube].sCatch,
     spawnT,
     v0,
     surge,
@@ -86,9 +98,9 @@ export function timeAtHead(b, s) {
   return b.tSurge + (s - b.surge.at) / b.surge.speed;
 }
 
-// When the body centre crosses the catch line.
+// When the body centre crosses its tube's catch line.
 export function crossTime(flow, b) {
-  return timeAtHead(b, flow.sCatch + b.bodyFromHead);
+  return timeAtHead(b, (b.sCatch ?? flow.sCatch) + b.bodyFromHead);
 }
 
 // When the tail passes the end of the flume.

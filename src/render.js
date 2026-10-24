@@ -3,6 +3,7 @@
 
 import { BUFFER_W as W, BUFFER_H as H } from './path.js';
 import { handPhase } from './catch.js';
+import { CurveLayer, POOL } from './curves.js';
 import {
   PAL, GRADE_COLOR, STAR, px, line, fillEllipse, drawGrid, rng, drawText, drawTextCentered, textWidth,
 } from './sprites.js';
@@ -18,6 +19,10 @@ export function hit(b, p) {
 
 export function selectButtons(n) {
   return Array.from({ length: n }, (_, i) => ({ x: 16, y: 72 + i * 46, w: 148, h: 38, id: i }));
+}
+
+export function shopButtons(n) {
+  return Array.from({ length: n }, (_, i) => ({ x: 16, y: 84 + i * 62, w: 148, h: 52, id: i }));
 }
 
 export function resultButtons(hasNext) {
@@ -36,11 +41,11 @@ function makeCanvas(w, h) {
   return c;
 }
 
-export function createRenderer(canvas, path) {
+export function createRenderer(canvas) {
   const buf = makeCanvas(W, H);
   const g = buf.getContext('2d');
   const out = canvas.getContext('2d');
-  const bg = buildBackground(path);
+  const scenes = new Map();
   let scale = 1;
   let offX = 0;
   let offY = 0;
@@ -74,7 +79,24 @@ export function createRenderer(canvas, path) {
     };
   }
 
-  return { g, bg, resize, present, toBuffer, get scale() { return scale; } };
+  // A scene is { key, theme, tubes: [{ path, covers }] }. Its background (and,
+  // for curved tubes, its depth-buffered tube layer) is built once.
+  function scene(def) {
+    let sc = scenes.get(def.key);
+    if (!sc) {
+      const curved = def.tubes.some((t) => !t.path.straight);
+      sc = {
+        theme: def.theme,
+        paths: def.tubes.map((t) => t.path),
+        bg: buildBackground(def.tubes.map((t) => t.path), def.theme),
+        curves: curved ? new CurveLayer(def.tubes) : null,
+      };
+      scenes.set(def.key, sc);
+    }
+    return sc;
+  }
+
+  return { g, scene, resize, present, toBuffer, get scale() { return scale; } };
 }
 
 // ---------- static background (built once) ----------
@@ -83,10 +105,17 @@ function blob(g, cx, cy, r, c) {
   fillEllipse(g, cx, cy, r, r, c);
 }
 
-function buildBackground(path) {
+function buildBackground(paths, theme = 'kyoto') {
+  if (theme === 'pool') return buildPoolBackground();
   const c = makeCanvas(W, H);
   const g = c.getContext('2d');
   const r = rng(11);
+  const path = paths[0];
+  // One basin under all the flumes (exactly the shop 1 basin for one flume).
+  const left = Math.min(...paths.map((q) => q.at(1).x - q.widthNear / 2));
+  const right = Math.max(...paths.map((q) => q.at(1).x + q.widthNear / 2));
+  const basinX = paths.length === 1 ? path.cx : (left + right) / 2;
+  const basinR = paths.length === 1 ? 40 : Math.round((right - left) / 2 + 8);
 
   // Garden ground around the flume.
   px(g, 0, 0, W, H, PAL.ground);
@@ -96,8 +125,9 @@ function buildBackground(path) {
   for (let i = 0; i < 260; i++) {
     const side = r() < 0.5 ? -1 : 1;
     const y = 120 + r() * 166;
-    const s = path.sAtY(y);
-    const p = path.at(Math.min(1, Math.max(0, s)));
+    const lane = paths.length === 1 ? path : side < 0 ? paths[0] : paths[paths.length - 1];
+    const s = lane.sAtY(y);
+    const p = lane.at(Math.min(1, Math.max(0, s)));
     const x = p.x + side * (p.width / 2 + 3 + r() * 14 * p.scale + 2);
     px(g, x, y, 1 + (r() < 0.3), 1, r() < 0.35 ? PAL.pebbleDark : PAL.pebble);
   }
@@ -110,6 +140,7 @@ function buildBackground(path) {
     blob(g, r() * W, y, 2 + r() * 7, r() < 0.5 ? PAL.leafMid : y < 40 && r() < 0.5 ? PAL.leafLight : PAL.leafMid);
   }
   for (let i = 0; i < 60; i++) px(g, r() * W, r() * 96, 1, 1, PAL.mossHi);
+  if (theme === 'hall') drawLanterns(g);
 
   // Mossy boulders around the waterfall and along the top edge of the garden.
   const rocks = [[10, 92, 14, 9], [58, 94, 12, 8], [140, 92, 22, 11], [174, 84, 14, 12], [104, 98, 10, 6], [32, 100, 10, 5]];
@@ -124,25 +155,75 @@ function buildBackground(path) {
   fillEllipse(g, 32, 90, 18, 4, PAL.waterDeep);
   fillEllipse(g, 32, 89, 14, 2, PAL.water);
 
-  // Stone basin where the flume ends.
-  fillEllipse(g, path.cx, COUNTER_Y + 5, 40, 7, PAL.rockDark);
-  fillEllipse(g, path.cx, COUNTER_Y + 4, 37, 5, PAL.rock);
-  fillEllipse(g, path.cx, COUNTER_Y + 4, 32, 3, PAL.waterDeep);
+  // Stone basin where the flumes end.
+  fillEllipse(g, basinX, COUNTER_Y + 5, basinR, 7, PAL.rockDark);
+  fillEllipse(g, basinX, COUNTER_Y + 4, basinR - 3, 5, PAL.rock);
+  fillEllipse(g, basinX, COUNTER_Y + 4, basinR - 8, 3, PAL.waterDeep);
 
   // Wooden counter in the foreground.
-  px(g, 0, COUNTER_Y, path.cx - 41, H - COUNTER_Y, PAL.wood);
-  px(g, path.cx + 41, COUNTER_Y, W, H - COUNTER_Y, PAL.wood);
+  px(g, 0, COUNTER_Y, basinX - basinR - 1, H - COUNTER_Y, PAL.wood);
+  px(g, basinX + basinR + 1, COUNTER_Y, W, H - COUNTER_Y, PAL.wood);
   px(g, 0, COUNTER_Y + 11, W, H - COUNTER_Y - 11, PAL.wood);
-  px(g, 0, COUNTER_Y, path.cx - 41, 1, PAL.woodHi);
-  px(g, path.cx + 41, COUNTER_Y, W, 1, PAL.woodHi);
+  px(g, 0, COUNTER_Y, basinX - basinR - 1, 1, PAL.woodHi);
+  px(g, basinX + basinR + 1, COUNTER_Y, W, 1, PAL.woodHi);
   for (let i = 0; i < 40; i++) {
     const y = COUNTER_Y + 2 + Math.floor(r() * 20);
     const x = r() * W;
-    if (y < COUNTER_Y + 11 && Math.abs(x - path.cx) < 44) continue;
+    if (y < COUNTER_Y + 11 && Math.abs(x - basinX) < basinR + 4) continue;
     px(g, x, y, 4 + r() * 14, 1, PAL.woodDark);
   }
   px(g, 0, H - 6, W, 6, PAL.woodDark);
   px(g, 0, H - 6, W, 1, PAL.woodHi);
+  return c;
+}
+
+// Red paper lanterns hanging over the flume hall.
+function drawLanterns(g) {
+  for (const [x, y] of [[24, 22], [90, 14], [156, 24]]) {
+    line(g, x, 0, x, y - 8, PAL.lanternString);
+    fillEllipse(g, x, y, 6, 8, PAL.lanternDark);
+    fillEllipse(g, x, y, 5, 7, PAL.lantern);
+    for (let k = -6; k <= 6; k += 3) px(g, x - 4, y + k, 9, 1, PAL.lanternDark);
+    px(g, x - 2, y - 3, 1, 5, PAL.lanternGlow);
+    px(g, x - 3, y - 9, 7, 2, PAL.lanternCap);
+    px(g, x - 3, y + 8, 7, 2, PAL.lanternCap);
+  }
+}
+
+// Shop 3: a waterpark. Sky and trees behind, a tiled deck, the pool in front
+// and a poolside table on the right for the bowl.
+function buildPoolBackground() {
+  const c = makeCanvas(W, H);
+  const g = c.getContext('2d');
+  const r = rng(23);
+  for (let y = 0; y < 70; y++) px(g, 0, y, W, 1, y < 30 ? PAL.poolSky : PAL.poolSkyLow);
+  fillEllipse(g, 150, 18, 9, 9, PAL.sun);
+  for (const [x, y, w] of [[30, 16, 16], [96, 28, 22], [60, 8, 10]]) {
+    fillEllipse(g, x, y, w, 3, PAL.cloud);
+    fillEllipse(g, x + 4, y - 2, w / 2, 3, PAL.cloud);
+  }
+  for (let i = 0; i < 70; i++) {
+    const y = 50 + r() * 40;
+    fillEllipse(g, r() * W, y, 4 + r() * 7, 4 + r() * 6, r() < 0.5 ? PAL.leafMid : PAL.leafDark);
+  }
+  for (let i = 0; i < 40; i++) px(g, r() * W, 52 + r() * 36, 1, 1, PAL.leafLight);
+  // Tiled deck, with tile lines closer together toward the back.
+  px(g, 0, 92, W, COUNTER_Y - 92, PAL.deck);
+  for (let k = 0; k < 14; k++) {
+    const y = Math.round(92 + (COUNTER_Y - 92) * Math.pow(k / 13, 1.6));
+    px(g, 0, y, W, 1, PAL.deckLine);
+  }
+  for (let x = -200; x < W + 200; x += 24) line(g, 90 + (x - 90) * 0.35, 92, x, COUNTER_Y, PAL.deckLine);
+  // Pool across the front, with a white edge and tile grid.
+  px(g, 0, COUNTER_Y - 4, 132, H - COUNTER_Y + 4, PAL.poolWater);
+  px(g, 0, COUNTER_Y - 6, 132, 2, PAL.poolEdge);
+  for (let y = COUNTER_Y; y < H; y += 6) px(g, 0, y, 132, 1, PAL.poolTile);
+  for (let x = 0; x < 132; x += 8) px(g, x, COUNTER_Y - 4, 1, H, PAL.poolTile);
+  for (let i = 0; i < 30; i++) px(g, r() * 128, COUNTER_Y - 2 + r() * 28, 2 + r() * 4, 1, PAL.waterHi);
+  // Poolside table for the bowl.
+  px(g, 132, COUNTER_Y, W - 132, H - COUNTER_Y, PAL.wood);
+  px(g, 132, COUNTER_Y, W - 132, 1, PAL.woodHi);
+  px(g, 132, H - 6, W - 132, 6, PAL.woodDark);
   return c;
 }
 
@@ -199,7 +280,7 @@ function drawFlume(g, path, t, covers = []) {
     if (s < 0 || s > 1) continue;
     const p = path.at(s);
     const half = p.width / 2;
-    const wall = Math.max(1, Math.round(5 * p.scale));
+    const wall = Math.max(1, Math.round(5 * p.scale * (path.widthNear / 64)));
     const xl = Math.round(p.x - half);
     const xr = Math.round(p.x + half);
     px(g, xl - 1, y, 1, 1, PAL.shadow);
@@ -244,7 +325,7 @@ function drawFlume(g, path, t, covers = []) {
 }
 
 export function drawTomato(g, x, y, scale) {
-  const r = Math.max(1, Math.round(5.5 * scale));
+  const r = Math.max(2, Math.round(7 * scale));
   fillEllipse(g, x, y, r, r, PAL.tomatoDark);
   fillEllipse(g, x - (r > 2 ? 1 : 0), y - (r > 2 ? 1 : 0), Math.max(1, r - 1), Math.max(1, r - 1), PAL.tomato);
   if (r > 1) px(g, x - Math.ceil(r / 2), y - Math.ceil(r / 2), 1, 1, PAL.tomatoHi);
@@ -261,16 +342,27 @@ export function drawLeaf(g, x, y, scale, c = PAL.momiji, dark = PAL.momijiDark) 
   px(g, x, y, 1, 1, dark);
 }
 
-function drawBundles(g, path, flow, t, covers = []) {
+function drawBundles(g, paths, flow, t) {
   for (const b of flow.bundles) {
     if (b.state !== 'flow') continue;
+    const path = paths[b.tube] || paths[0];
+    const covers = (flow.tubes[b.tube] || flow.tubes[0]).covers;
+    const k = path.widthNear / 64; // narrower lanes get narrower noodles
     if (b.kind !== 'noodle') {
       const sC = b.sHead - b.bodyFromHead;
       if (sC <= 0 || sC > 1 || inCover(covers, sC)) continue;
       const p = path.at(sC);
-      const x = Math.round(p.x + Math.sin(sC * 50 + t * 5 + b.id) * 1.5 * p.scale);
-      if (b.kind === 'tomato') drawTomato(g, x, Math.round(p.y), p.scale);
-      else drawLeaf(g, x, Math.round(p.y), p.scale);
+      if (b.kind === 'tomato') {
+        // Bounces wall to wall in a zig-zag, hopping a little at each wall.
+        // Visual only: judging still uses s.
+        const u = frac(sC * 6 + b.id * 0.31);
+        const tri = 1 - 4 * Math.abs(u - 0.5); // -1 … 1
+        const hop = Math.abs(Math.sin(u * Math.PI * 2)) * 3 * p.scale;
+        const x = Math.round(p.x + tri * p.width * 0.24);
+        drawTomato(g, x, Math.round(p.y - hop), p.scale * k);
+      } else {
+        drawLeaf(g, Math.round(p.x + Math.sin(sC * 50 + t * 5 + b.id) * 1.5 * p.scale), Math.round(p.y), p.scale * k);
+      }
       continue;
     }
     const w = b.windows;
@@ -290,7 +382,7 @@ function drawBundles(g, path, flow, t, covers = []) {
       if (u < headFrac) wf = 0.55 + 0.45 * (u / headFrac);
       else if (u < headFrac + bodyFrac) wf = 1;
       else wf = 1 - 0.7 * ((u - headFrac - bodyFrac) / (1 - headFrac - bodyFrac));
-      const w = Math.max(2, Math.round(22 * p.scale * wf));
+      const w = Math.max(2, Math.round(22 * p.scale * k * wf));
       const cx = p.x + Math.sin(s * 50 + t * 5 + b.id) * 1.5 * p.scale;
       const x0 = Math.round(cx - w / 2);
       const far = p.scale < 0.36;
@@ -315,9 +407,14 @@ function lerpP(a, b, e) {
 
 const HANG = { PERFECT: [7, 24], GOOD: [5, 18], TAIL: [2, 10] };
 
-export function handPose(path, hand, sCatch) {
-  const c = path.at(sCatch);
-  const T0 = { x: c.x - 4, y: Math.round(c.y) };
+// `catchPts[i]` is tube i's catch point on screen.
+export function handPose(catchPts, hand) {
+  const at = (i) => {
+    const c = catchPts[i] || catchPts[0];
+    return { x: c.x - 4, y: Math.round(c.y) };
+  };
+  const T0 = at(hand.tube);
+  const from = at(hand.fromTube);
   const dipped = { x: T0.x, y: T0.y + 3 };
   const lifted = { x: T0.x + 8, y: T0.y - 36 };
   const cupTip = { x: CUP.x + CUP.w / 2 - 2, y: CUP.y - 18 };
@@ -330,7 +427,7 @@ export function handPose(path, hand, sCatch) {
   let off = OFF0;
   let hang = 0;
   if (name === 'dip') {
-    tip = lerpP(T0, dipped, e);
+    tip = lerpP(from, dipped, e);
     gap = 5 * (1 - e);
   } else if (name === 'lift') {
     tip = lerpP(dipped, lifted, e);
@@ -473,6 +570,23 @@ function panel(g, x, y, w, h, edge = PAL.panelEdge) {
   px(g, x + 1, y + 1, w - 2, 1, PAL.panelHi);
 }
 
+function highlight(g, b) {
+  px(g, b.x - 2, b.y - 2, b.w + 4, 1, PAL.gold);
+  px(g, b.x - 2, b.y + b.h + 1, b.w + 4, 1, PAL.gold);
+  px(g, b.x - 2, b.y - 2, 1, b.h + 4, PAL.gold);
+  px(g, b.x + b.w + 1, b.y - 2, 1, b.h + 4, PAL.gold);
+  const cy = Math.round(b.y + b.h / 2);
+  for (let i = 0; i < 4; i++) px(g, b.x - 9 + i, cy - 3 + i, 1, 7 - 2 * i, PAL.gold);
+}
+
+// Small marker above the tube a keyboard player is aimed at.
+function drawAim(g, pt, t) {
+  const x = Math.round(pt.x);
+  const y = Math.round(pt.y) - 30 - (Math.floor(t * 4) % 2);
+  for (let i = 0; i < 4; i++) px(g, x - 3 + i, y + i, 7 - 2 * i, 1, PAL.gold);
+  px(g, x - 3, y - 1, 7, 1, PAL.textShadow);
+}
+
 function dim(g, a = 0.55) {
   g.fillStyle = `rgba(10,20,10,${a})`;
   g.fillRect(0, 0, W, H);
@@ -522,17 +636,23 @@ function drawIntro(g, level, n, t) {
 
 // ---------- public draw calls ----------
 
-export function drawWorld(g, bg, view) {
-  const { path, t, flow, hand, sCatch } = view;
-  const covers = view.covers || [];
-  g.drawImage(bg, 0, 0);
-  drawWaterfall(g, t);
-  drawFlume(g, path, t, covers);
-  if (view.distractions) drawDistractions(g, t, view.distractions);
-  drawBundles(g, path, flow, t, covers);
+export function drawWorld(g, view) {
+  const { scene, t, flow, hand } = view;
+  g.drawImage(scene.bg, 0, 0);
+  if (scene.theme !== 'pool') drawWaterfall(g, t);
+  if (scene.curves) {
+    if (view.distractions) drawDistractions(g, t, view.distractions);
+    scene.curves.draw(g, flow, t);
+  } else {
+    scene.paths.forEach((path, i) => drawFlume(g, path, t, (flow.tubes[i] || { covers: [] }).covers));
+    if (view.distractions) drawDistractions(g, t, view.distractions);
+    drawBundles(g, scene.paths, flow, t);
+  }
   drawCup(g, view.cupFill);
   if (view.cupLabel) drawTextCentered(g, view.cupLabel, CUP.x + CUP.w / 2, COUNTER_Y + 15, PAL.text);
-  drawHand(g, handPose(path, hand, sCatch), t);
+  const catchPts = scene.paths.map((path, i) => path.at((flow.tubes[i] || flow.tubes[0]).sCatch));
+  if (view.aim !== null && view.aim !== undefined && catchPts[view.aim]) drawAim(g, catchPts[view.aim], t);
+  drawHand(g, handPose(catchPts, hand), t);
   for (const q of view.particles) {
     if (q.leaf) drawLeaf(g, Math.round(q.x), Math.round(q.y), 0.5);
     else px(g, q.x, q.y, 1, 1, PAL.waterHi);
@@ -558,19 +678,41 @@ export function drawTitle(g, t, muted) {
   drawTextCentered(g, 'SOMEN', W / 2, 128, PAL.noodle, 4);
   drawTextCentered(g, 'CATCH', W / 2, 152, PAL.gold, 4);
   drawTextCentered(g, 'NAGASHI SOMEN', W / 2, 178, PAL.bambooHi);
-  drawTextCentered(g, 'TAP OR SPACE TO CATCH', W / 2, 190, PAL.dim);
+  drawTextCentered(g, 'TAP OR ARROWS + SPACE', W / 2, 190, PAL.dim);
   if (Math.floor(t * 2) % 2 === 0) drawTextCentered(g, 'TAP TO START', W / 2, 228, PAL.text, 2);
   drawSpeaker(g, muted);
 }
 
-export function drawSelect(g, levels, progress, muted) {
+export function drawShops(g, shops, progress, muted, cursor = -1) {
   dim(g);
-  drawTextCentered(g, 'CHOOSE A FLUME', W / 2, 40, PAL.text, 2);
+  drawTextCentered(g, 'CHOOSE A SHOP', W / 2, 40, PAL.text, 2);
+  drawTextCentered(g, 'ALL SHOPS ARE OPEN', W / 2, 60, PAL.dim);
+  shopButtons(shops.length).forEach((b, i) => {
+    const shop = shops[i];
+    const stars = shop.levels.reduce((n, lv) => n + (progress.best[lv.id] ? progress.best[lv.id].stars : 0), 0);
+    panel(g, b.x, b.y, b.w, b.h, i === 2 ? PAL.poolEdgeHi : i === 1 ? PAL.lantern : PAL.panelEdge);
+    drawText(g, `${i + 1}`, b.x + 6, b.y + 8, PAL.gold, 2);
+    drawText(g, shop.name, b.x + 20, b.y + 9, PAL.text);
+    drawText(g, shop.blurb, b.x + 20, b.y + 20, PAL.bambooHi);
+    drawText(g, `${progress.unlocked[shop.id] || 1}/5 OPEN`, b.x + 20, b.y + 31, PAL.dim);
+    drawGrid(g, STAR, b.x + 20, b.y + 40, { '#': stars ? PAL.gold : PAL.dim });
+    drawText(g, `${stars}/15`, b.x + 32, b.y + 42, stars ? PAL.gold : PAL.dim);
+    if (i === cursor) highlight(g, b);
+  });
+  drawSpeaker(g, muted);
+}
+
+export function drawSelect(g, shop, progress, muted, cursor = -1) {
+  const levels = shop.levels;
+  dim(g);
+  drawQuit(g);
+  drawTextCentered(g, shop.name, W / 2, 40, PAL.text, 2);
   selectButtons(levels.length).forEach((b, i) => {
     const lv = levels[i];
-    const locked = i >= progress.unlocked;
+    const locked = i >= (progress.unlocked[shop.id] || 1);
     const best = progress.best[lv.id];
     panel(g, b.x, b.y, b.w, b.h, locked ? PAL.dim : PAL.panelEdge);
+    if (i === cursor) highlight(g, b);
     drawText(g, `${i + 1}`, b.x + 6, b.y + 6, locked ? PAL.dim : PAL.gold, 2);
     drawText(g, lv.name, b.x + 20, b.y + 7, locked ? PAL.dim : PAL.text);
     if (locked) {
@@ -585,7 +727,7 @@ export function drawSelect(g, levels, progress, muted) {
   drawSpeaker(g, muted);
 }
 
-export function drawResults(g, { level, score, result, hasNext, muted, totals }) {
+export function drawResults(g, { level, score, result, hasNext, muted, totals, cursor = -1 }) {
   dim(g);
   panel(g, 12, 38, 156, 238);
   drawTextCentered(g, level.name, W / 2, 48, PAL.text, 2);
@@ -623,10 +765,11 @@ export function drawResults(g, { level, score, result, hasNext, muted, totals })
   drawTextCentered(g, `SCORE ${score.points}`, W / 2, 200, PAL.gold, 2);
   drawTextCentered(g, result.newBest ? 'NEW BEST!' : `BEST ${result.best}`, W / 2, 220, result.newBest ? PAL.good : PAL.dim);
   if (result.stars === 0) drawTextCentered(g, 'GET 1 STAR TO UNLOCK THE NEXT', W / 2, 232, PAL.dim);
-  for (const b of resultButtons(hasNext)) {
+  resultButtons(hasNext).forEach((b, i) => {
     panel(g, b.x, b.y, b.w, b.h, b.id === 'next' ? PAL.gold : PAL.panelEdge);
-    drawTextCentered(g, b.label, b.x + b.w / 2, b.y + 7, PAL.text);
-  }
+    drawTextCentered(g, b.label, b.x + b.w / 2, b.y + 7, i === cursor ? PAL.gold : PAL.text);
+    if (i === cursor) px(g, b.x + 4, b.y + b.h - 4, b.w - 8, 1, PAL.gold);
+  });
   drawSpeaker(g, muted);
 }
 

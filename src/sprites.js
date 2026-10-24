@@ -62,6 +62,23 @@ export const PAL = {
   dragonfly: '#3a9fc7',
   dragonflyDark: '#1f5a78',
   wing: '#d8f0ff',
+  // Flume hall
+  lantern: '#d8452f',
+  lanternDark: '#9c2a1e',
+  lanternGlow: '#ffb27a',
+  lanternCap: '#2a1d12',
+  lanternString: '#3a2a1a',
+  // Pool slides
+  poolSky: '#8fd3f4',
+  poolSkyLow: '#b8e6f7',
+  sun: '#fff1a8',
+  cloud: '#ffffff',
+  deck: '#e4dccb',
+  deckLine: '#cfc4ae',
+  poolWater: '#2f9fd8',
+  poolTile: '#5cc0ea',
+  poolEdge: '#f4f4ef',
+  poolEdgeHi: '#7fd0e6',
 };
 
 export const GRADE_COLOR = { PERFECT: PAL.perfect, GOOD: PAL.good, TAIL: PAL.tail, MISS: PAL.miss, TOMATO: PAL.tomatoHi };
@@ -150,7 +167,7 @@ const GLYPHS = {
   0: '111101101101111', 1: '010110010010111', 2: '110001010100111', 3: '110001010001110',
   4: '101101111001001', 5: '111100110001110', 6: '011100111101111', 7: '111001010010010',
   8: '111101111101111', 9: '111101111001110',
-  ' ': '000000000000000', '!': '010010010000010', '.': '000000000000010', ':': '000010000010000',
+  ' ': '000000000000000', '!': '010010010000010', '.': '000000000000010', ',': '000000000010100', ':': '000010000010000',
   '/': '001001010100100', '-': '000000111000000', '?': '110001010000010', '<': '001010100010001',
   '>': '100010001010100', '+': '000010111010000', '%': '101001010100101',
 };
