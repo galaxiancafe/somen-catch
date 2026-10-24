@@ -1,0 +1,34 @@
+{
+  "level": {
+    "id": "first-taste",
+    "name": "FIRST TASTE",
+    "bundles": 8,
+    "speed": 0.4,
+    "spacingMs": 900,
+    "starThresholds": [
+      30,
+      55,
+      72
+    ]
+  },
+  "offsets": [
+    0,
+    50,
+    null,
+    -100,
+    150,
+    0,
+    null,
+    210
+  ],
+  "spawnTimes": [
+    1.2,
+    3.4849999999999994,
+    5.819999999999999,
+    8.7,
+    10.885,
+    13.32,
+    15.605,
+    18.485
+  ]
+}
